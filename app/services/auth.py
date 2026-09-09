@@ -9,7 +9,6 @@ from app.models.user import User
 from app.models.otp import OTP
 from app.schemas.user import CreateUser
 from app.utils.otp import generate_otp
-from app.services.mail import send_otp_email
 from app.utils.response import success_response
 
 password_hash = PasswordHash.recommended()
@@ -45,7 +44,7 @@ async def register_user(db: AsyncSession, user_data: CreateUser):
     await db.commit()
 
   
-    await send_otp_email(email=new_user.email, name=new_user.name, otp=otp_code)
+    # await send_otp_email(email=new_user.email, name=new_user.name, otp=otp_code)
 
     return success_response(
         message="Registration successful. Please verify your email.",

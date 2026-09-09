@@ -6,17 +6,16 @@ from brevo.transactional_emails import (
 
 from app.config import BREVO_KEY
 
-client =  AsyncBrevo(api_key=BREVO_KEY)
+client = AsyncBrevo(api_key=BREVO_KEY)
 
-async def send_otp_email(email: str, name: str, otp: str):
+
+async def send_otp_email(email: str, otp: str):
     result = await client.transactional_emails.send_transac_email(
         subject="Verify your email",
         html_content=f"""
         <html>
             <body>
                 <h2>Email Verification</h2>
-
-                <p>Hello {name or "User"},</p>
 
                 <p>Your OTP is:</p>
 
@@ -29,13 +28,11 @@ async def send_otp_email(email: str, name: str, otp: str):
         </html>
         """,
         sender=SendTransacEmailRequestSender(
-           name= "Utpal Sonowal", 
-           email= "utpal@utpal.utpx.in"
+            name="Utpal Sonowal", email="utpal@utpal.utpx.in"
         ),
         to=[
             SendTransacEmailRequestToItem(
                 email=email,
-                name=name or "User",
             )
         ],
     )

@@ -4,7 +4,7 @@ from typing import AsyncGenerator
 
 from app.config import DATABASE_URL
 
-engine = create_async_engine(DATABASE_URL, echo=True)
+engine = create_async_engine(DATABASE_URL)
 
 sessionLocal = async_sessionmaker(engine, expire_on_commit=False)
 
