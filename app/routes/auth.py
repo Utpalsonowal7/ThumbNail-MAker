@@ -1,9 +1,9 @@
 from fastapi import APIRouter, Depends
 from sqlalchemy.ext.asyncio import AsyncSession
-from pydantic import EmailStr
 
 from app.core.db import get_session
 from app.schemas.user import CreateUser
+from app.schemas.user import Email
 from app.schemas.user import VerifyOTP
 from app.services.auth import register_user
 from app.services.send_otp import send_otp
@@ -19,7 +19,7 @@ async def register(
      return await register_user(db, user_data)
 
 @router.post("/send-otp", status_code=200)
-async def send(email: EmailStr):
+async def send(email: Email):
     return await send_otp(email)
 
 @router.post("/verify-otp", status_code=200)

@@ -42,8 +42,8 @@ async def verify_user(data: VerifyOTP, db: AsyncSession):
 
     if not stored_otp:
         raise HTTPException(status_code=400, detail="OTP has expired or is invalid")
-
-    if stored_otp != data.otp:
+ 
+    if stored_otp.decode('utf-8') != data.otp:
         raise HTTPException(status_code=400, detail="Invalid OTP")
 
     result = await db.execute(select(User).where(User.email == data.email))
