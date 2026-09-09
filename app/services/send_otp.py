@@ -4,11 +4,12 @@ from app.utils.response import success_response
 from app.workers import queue
 
 from app.core.redis import redis
-from pydantic import EmailStr
+from app.schemas.user import Email
 
 import time
 
-async def send_otp(email: EmailStr):
+
+async def send_otp(email: Email):
     start = time.perf_counter()
     key = otp_key(email)
     otp = generate_otp()
@@ -18,4 +19,3 @@ async def send_otp(email: EmailStr):
 
     print(f"ARQ enqueue: {(time.perf_counter() - start) * 1000:.2f} ms")
     return success_response(message="✅ Otp send successfully")
-
