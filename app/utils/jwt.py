@@ -27,6 +27,14 @@ def create_refresh_token(data: dict):
     return encoded_jwt
 
 
+def decode_access_token(token: str) -> dict:
+    return jwt.decode(token, JWT_ACCESS_TOKEN_SECRECT, algorithms=[JWT_ALGORITHM])
+
+
+def decode_refresh_token(token: str) -> dict:
+    return jwt.decode(token, JWT_REFRESH_TOKEN_SECRET, algorithms=[JWT_ALGORITHM])
+
+
 def create_auth_tokens(data: dict) -> dict:
    
     return {

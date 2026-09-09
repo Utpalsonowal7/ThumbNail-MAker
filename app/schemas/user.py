@@ -12,3 +12,7 @@ class Email(BaseModel):
 class VerifyOTP(BaseModel):
     email: EmailStr
     otp: str
+
+class LoginUser(BaseModel):
+       email: EmailStr
+       password: str
