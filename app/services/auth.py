@@ -27,13 +27,13 @@ async def _set_auth_cookies(
     tokens = create_auth_tokens({"sub": str(user_id)})
 
     session = Session(
-        user_id=user_id,
-        refresh_token=tokens["refresh_token"],
-        expires_at=datetime.now(timezone.utc) + timedelta(days=30),
-        user_agent=req.headers.get("user-agent"),
-        ip_address=req.client.host if req.client else None,
+        userId=user_id,
+        refreshToken=tokens["refresh_token"],
+        expiresAt=datetime.now(timezone.utc) + timedelta(days=30),
+        userAgent=req.headers.get("user-agent"),
+        ipAddress=req.client.host if req.client else None,
     )
-    
+
     db.add(session)
     await db.commit()
     await db.refresh(session)
@@ -50,7 +50,7 @@ async def _set_auth_cookies(
     )
 
 
-async def register_user(db: AsyncSession, user_data: CreateUser, response: Response):
+async def register_user(db: AsyncSession, user_data: CreateUser, response: Response, request: Request):
     result = await db.execute(select(User).where(User.email == user_data.email))
     existing_user = result.scalar_one_or_none()
 
@@ -122,7 +122,7 @@ async def login_user(data: LoginUser, db: AsyncSession, response: Response):
             status_code=403, detail="Please verify your email before logging in"
         )
 
-    await _set_auth_cookies(response, request, user.id, db)
+    await _set_auth_cookies(response, request, user.id, db, request)
 
     return success_response(
         message="Logged in successfully.",

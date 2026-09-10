@@ -20,9 +20,10 @@ router = APIRouter(prefix="/auth", tags=["auth"])
 async def register(
     user_data: CreateUser,
     response: Response,
+    request: Request,
     db: AsyncSession = Depends(get_session),
 ):
-    return await register_user(db, user_data, response)
+    return await register_user(db, user_data, response, request)
 
 
 @router.post("/verify-otp")
