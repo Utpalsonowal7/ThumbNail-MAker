@@ -7,12 +7,14 @@ from app.core.db import engine, Base
 from app.models.user import User
 from app.models.sessions import Session
 from app.models.otp import OTP
+from app.models.jobs import Job
+from app.models.thumbnails import Thumbnail
 
 from app.core.redis import redis
 from app.workers.queue import init_queue, close_queue
 
 from app.routes.auth import router as auth_route
-
+from app.routes.thumbnail import router as thumbnail_router
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -54,6 +56,7 @@ async def measure_request_time(request: Request, call_next):
 
 
 app.include_router(auth_route)
+app.include_router(thumbnail_router)
 
 
 @app.get("/")
