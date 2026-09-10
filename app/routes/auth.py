@@ -6,6 +6,10 @@ from app.dependencies.auth import get_current_user
 from app.models.user import User
 from app.schemas.user import CreateUser, VerifyOTP, LoginUser
 from app.services.auth import (
+    github_callback,
+    github_login_redirect,
+    google_callback,
+    google_login_redirect,
     register_user,
     verify_user,
     login_user,
@@ -58,3 +62,34 @@ async def get_me(current_user: User = Depends(get_current_user)):
         "email": current_user.email,
         "is_verified": current_user.is_verified,
     }
+
+
+@router.get("/google")
+async def google_login(request: Request, response: Response):
+    return await google_login_redirect(request, response)
+
+
+@router.get("/google/callback")
+async def google_auth_callback(
+    code: str,
+    state: str,
+    request: Request,
+    response: Response,
+    db: AsyncSession = Depends(get_session),
+):
+    return await google_callback(code, state, request, response, db)
+
+
+@router.get("/github")
+async def github_login():
+    return await github_login_redirect()
+
+
+@router.get("/github/callback")
+async def github_auth_callback(
+    code: str,
+    state: str,
+    request: Request,
+    db: AsyncSession = Depends(get_session),
+):
+    return await github_callback(code, state, request, db)

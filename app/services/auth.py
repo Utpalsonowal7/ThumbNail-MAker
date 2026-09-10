@@ -1,10 +1,16 @@
+from urllib.parse import urlencode
+
 from fastapi import HTTPException, Request, Response
+from fastapi.responses import RedirectResponse
+from sqlalchemy.exc import IntegrityError
 from httpx import request
 import jwt
 from pwdlib import PasswordHash
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from datetime import datetime, timedelta, timezone
+import secrets
+import httpx
 
 from app.models.user import User
 from app.models.sessions import Session
@@ -17,7 +23,25 @@ from app.utils.cookie_options import (
     ACCESS_TOKEN_COOKIE_OPTIONS,
     REFRESH_TOKEN_COOKIE_OPTIONS,
 )
+from app.config import (
+    GOOGLE_CLIENT_ID,
+    GOOGLE_CLIENT_SECRET,
+    GOOGLE_REDIRECT_URI,
+    GOOGLE_AUTH_URI,
+    GOOGLE_TOKEN_URI,
+    GOOGLE_PROVIDER_URI,
+    GITHUB_CLIENT_ID,
+    GITHUB_CLIENT_SECRET,
+    GITHUB_REDIRECT_URI,
+    GITHUB_AUTH_URI,
+    GITHUB_TOKEN_URI,
+    GITHUB_USER_URI,
+    GITHUB_USER_EMAILS_URI,
+)
 
+
+FRONTEND_LOGIN_ERROR_URL="https://thumbnail-maker-frontend.vercel.app/login?error="
+FRONTEND_DASHBOARD_URL = "http://127.0.0.1:5500/t.html"
 password_hash = PasswordHash.recommended()
 
 
@@ -201,3 +225,239 @@ async def logout_user(request: Request, response: Response, db: AsyncSession):
     response.delete_cookie("refresh_token", path="/auth/refresh")
 
     return success_response(message="Logged out successfully.")
+
+
+async def google_login_redirect(
+    request: Request, response: Response
+) -> RedirectResponse:
+    state = secrets.token_urlsafe(32)
+
+    params = {
+        "client_id": GOOGLE_CLIENT_ID,
+        "redirect_uri": GOOGLE_REDIRECT_URI,
+        "response_type": "code",
+        "scope": "openid email profile",
+        "state": state,
+        "access_type": "offline",
+        "prompt": "select_account",
+    }
+    query = urlencode(params)
+    url = f"{GOOGLE_AUTH_URI}?{query}"
+
+    redirect_response = RedirectResponse(url=url)
+    redirect_response.set_cookie(
+        key="oauth_state",
+        value=state,
+        httponly=True,
+        secure=True,
+        samesite="lax",
+        max_age=600,
+    )
+    return redirect_response
+
+
+async def google_callback(
+    code: str,
+    state: str,
+    request: Request,
+    response: Response,
+    db: AsyncSession,
+) -> RedirectResponse:
+    cookie_state = request.cookies.get("oauth_state")
+    if not cookie_state or cookie_state != state:
+        return RedirectResponse(url=f"{FRONTEND_LOGIN_ERROR_URL}invalid_state")
+
+    async with httpx.AsyncClient() as client:
+        token_resp = await client.post(
+            GOOGLE_TOKEN_URI,
+            data={
+                "code": code,
+                "client_id": GOOGLE_CLIENT_ID,
+                "client_secret": GOOGLE_CLIENT_SECRET,
+                "redirect_uri": GOOGLE_REDIRECT_URI,
+                "grant_type": "authorization_code",
+            },
+        )
+
+    if token_resp.status_code != 200:
+        return RedirectResponse(url=f"{FRONTEND_LOGIN_ERROR_URL}token_exchange_failed")
+
+    google_access_token = token_resp.json().get("access_token")
+
+    async with httpx.AsyncClient() as client:
+        userinfo_resp = await client.get(
+            GOOGLE_PROVIDER_URI,
+            headers={"Authorization": f"Bearer {google_access_token}"},
+        )
+
+    if userinfo_resp.status_code != 200:
+        return RedirectResponse(url=f"{FRONTEND_LOGIN_ERROR_URL}userinfo_failed")
+
+    profile = userinfo_resp.json()
+
+    google_id = profile["id"]
+    email = profile.get("email")
+    name = profile.get("name") 
+    avatar = profile.get("picture")
+    email_verified = profile.get("verified_email", False)
+
+    if not email or not email_verified:
+        return RedirectResponse(url=f"{FRONTEND_LOGIN_ERROR_URL}email_not_verified")
+
+    result = await db.execute(select(User).where(User.email == email))
+    user = result.scalar_one_or_none()
+
+    if user:
+        if user.provider == "EMAIL":
+            return RedirectResponse(
+                url=f"{FRONTEND_LOGIN_ERROR_URL}account_exists_use_email_login"
+            )
+    else:
+        user = User(
+            name=name,
+            email=email,
+            password=None,
+            isEmailVerified=email_verified,
+            provider="GOOGLE",
+            providerId=google_id,
+            avatar=avatar,
+        )
+        db.add(user)
+
+        try:
+            await db.commit()
+        except IntegrityError:
+            await db.rollback()
+            return RedirectResponse(url=f"{FRONTEND_LOGIN_ERROR_URL}account_conflict")
+
+        await db.refresh(user)
+
+    redirect_response = RedirectResponse(url=FRONTEND_DASHBOARD_URL)
+    await _set_auth_cookies(redirect_response, request, user.id, db)
+
+    return redirect_response
+
+
+async def github_login_redirect() -> RedirectResponse:
+    state = secrets.token_urlsafe(32)
+
+    params = {
+        "client_id": GITHUB_CLIENT_ID,
+        "redirect_uri": GITHUB_REDIRECT_URI,
+        "scope": "read:user user:email",
+        "state": state,
+    }
+    query = urlencode(params)
+    url = f"{GITHUB_AUTH_URI}?{query}"
+
+    redirect_response = RedirectResponse(url=url)
+    redirect_response.set_cookie(
+        key="oauth_state",
+        value=state,
+        httponly=True,
+        secure=True,
+        samesite="lax",
+        max_age=600,
+    )
+    return redirect_response
+
+
+async def github_callback(
+    code: str,
+    state: str,
+    request: Request,
+    db: AsyncSession,
+) -> RedirectResponse:
+    cookie_state = request.cookies.get("oauth_state")
+    if not cookie_state or cookie_state != state:
+        return RedirectResponse(url=f"{FRONTEND_LOGIN_ERROR_URL}invalid_state")
+
+    async with httpx.AsyncClient() as client:
+        token_resp = await client.post(
+            GITHUB_TOKEN_URI,
+            headers={"Accept": "application/json"},
+            data={
+                "client_id": GITHUB_CLIENT_ID,
+                "client_secret": GITHUB_CLIENT_SECRET,
+                "code": code,
+                "redirect_uri": GITHUB_REDIRECT_URI,
+            },
+        )
+
+    if token_resp.status_code != 200:
+        return RedirectResponse(url=f"{FRONTEND_LOGIN_ERROR_URL}token_exchange_failed")
+
+    token_data = token_resp.json()
+    github_access_token = token_data.get("access_token")
+
+    if not github_access_token:
+        return RedirectResponse(url=f"{FRONTEND_LOGIN_ERROR_URL}token_exchange_failed")
+
+    auth_headers = {
+        "Authorization": f"Bearer {github_access_token}",
+        "Accept": "application/vnd.github+json",
+    }
+
+    async with httpx.AsyncClient() as client:
+        user_resp = await client.get(GITHUB_USER_URI, headers=auth_headers)
+
+    if user_resp.status_code != 200:
+        return RedirectResponse(url=f"{FRONTEND_LOGIN_ERROR_URL}userinfo_failed")
+
+    profile = user_resp.json()
+    print(f"GitHub profile: {profile}")
+    github_id = str(profile["id"])
+    name = profile.get("name") or profile.get("login")
+    avatar = profile.get("avatar_url")
+    email = profile.get("email")
+
+    if not email:
+        async with httpx.AsyncClient() as client:
+            emails_resp = await client.get(GITHUB_USER_EMAILS_URI, headers=auth_headers)
+
+        if emails_resp.status_code == 200:
+            emails = emails_resp.json()
+            primary = next(
+                (e for e in emails if e.get("primary") and e.get("verified")), None
+            )
+            if not primary:
+                primary = next((e for e in emails if e.get("verified")), None)
+            if primary:
+                email = primary.get("email")
+
+    if not email:
+        return RedirectResponse(url=f"{FRONTEND_LOGIN_ERROR_URL}email_not_verified")
+
+    result = await db.execute(select(User).where(User.email == email))
+    user = result.scalar_one_or_none()
+
+    if user:
+        if user.provider == "EMAIL":
+            return RedirectResponse(
+                url=f"{FRONTEND_LOGIN_ERROR_URL}account_exists_use_email_login"
+            )
+    else:
+        user = User(
+            name=name,
+            email=email,
+            password=None,
+            isEmailVerified=True,
+            provider="GITHUB",
+            providerId=github_id,
+            avatar=avatar,
+        )
+        db.add(user)
+
+        try:
+            await db.commit()
+        except IntegrityError:
+            await db.rollback()
+            return RedirectResponse(url=f"{FRONTEND_LOGIN_ERROR_URL}account_conflict")
+
+        await db.refresh(user)
+
+    print(user)
+    redirect_response = RedirectResponse(url=FRONTEND_DASHBOARD_URL)
+    await _set_auth_cookies(redirect_response, request, user.id, db)
+
+    return redirect_response

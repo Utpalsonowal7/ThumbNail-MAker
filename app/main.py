@@ -1,6 +1,7 @@
 from fastapi import FastAPI, Request
 import time
 from contextlib import asynccontextmanager
+from fastapi.middleware.cors import CORSMiddleware
 
 from app.core.db import engine, Base
 from app.models.user import User
@@ -27,6 +28,16 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(lifespan=lifespan)
+
+origins = ["http://localhost:3000", "https://yourdomain.com", "http://127.0.0.1:5500"]
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=origins,
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 
 @app.middleware("http")
