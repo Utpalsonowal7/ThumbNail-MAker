@@ -1,10 +1,13 @@
 from fastapi import HTTPException, Request, Response
+from httpx import request
 import jwt
 from pwdlib import PasswordHash
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
+from datetime import datetime, timedelta, timezone
 
 from app.models.user import User
+from app.models.sessions import Session
 from app.schemas.user import CreateUser, VerifyOTP, LoginUser
 from app.utils.jwt import create_auth_tokens, create_access_token, decode_refresh_token
 from app.core.redis import redis
@@ -18,9 +21,22 @@ from app.utils.cookie_options import (
 password_hash = PasswordHash.recommended()
 
 
-def _set_auth_cookies(response: Response, user_id: str):
-    """Creates access + refresh tokens for a user and sets them as cookies."""
+async def _set_auth_cookies(
+    response: Response, req: Request, user_id: str, db: AsyncSession
+):
     tokens = create_auth_tokens({"sub": str(user_id)})
+
+    session = Session(
+        user_id=user_id,
+        refresh_token=tokens["refresh_token"],
+        expires_at=datetime.now(timezone.utc) + timedelta(days=30),
+        user_agent=req.headers.get("user-agent"),
+        ip_address=req.client.host if req.client else None,
+    )
+    
+    db.add(session)
+    await db.commit()
+    await db.refresh(session)
 
     response.set_cookie(
         key="access_token",
@@ -41,17 +57,21 @@ async def register_user(db: AsyncSession, user_data: CreateUser, response: Respo
     if existing_user:
         raise HTTPException(status_code=400, detail="Email already exists")
 
-    hash_pass = password_hash.hash(user_data.password)
+    hash_pass = password_hash.hash(user_data.password) if user_data.password else None
 
     new_user = User(name=user_data.name, email=user_data.email, password=hash_pass)
 
     db.add(new_user)
-    await db.commit()
+
+    try:
+        await db.commit()
+    except Exception as e:
+        await db.rollback()
+        raise HTTPException(status_code=500, detail="An error occurred while registering the user")
+    
     await db.refresh(new_user)
 
-    # TODO: enqueue OTP email job here via arq, same as your send_otp flow
-
-    _set_auth_cookies(response, new_user.id)
+    await _set_auth_cookies(response, request, new_user.id, db)
 
     return success_response(
         message="Registration successful. Please verify your email.",
@@ -79,7 +99,7 @@ async def verify_user(data: VerifyOTP, db: AsyncSession):
     await db.commit()
     await db.refresh(user)
 
-    await redis.delete(key)  # OTP used, remove so it can't be replayed
+    await redis.delete(key) 
 
     return success_response(
         message="OTP verified successfully.",
@@ -102,7 +122,7 @@ async def login_user(data: LoginUser, db: AsyncSession, response: Response):
             status_code=403, detail="Please verify your email before logging in"
         )
 
-    _set_auth_cookies(response, user.id)
+    await _set_auth_cookies(response, request, user.id, db)
 
     return success_response(
         message="Logged in successfully.",
@@ -110,7 +130,7 @@ async def login_user(data: LoginUser, db: AsyncSession, response: Response):
     )
 
 
-async def refresh_access_token(request: Request, response: Response):
+async def refresh_access_token(request: Request, response: Response, db: AsyncSession):
     refresh_token = request.cookies.get("refresh_token")
     if not refresh_token:
         raise HTTPException(status_code=401, detail="No refresh token provided")
@@ -128,18 +148,56 @@ async def refresh_access_token(request: Request, response: Response):
     if not user_id:
         raise HTTPException(status_code=401, detail="Invalid token payload")
 
-    new_access_token = create_access_token({"sub": user_id})
+    result = await db.execute(
+        select(Session).where(Session.refresh_token == refresh_token)
+    )
+    session = result.scalar_one_or_none()
+
+    if not session:
+        raise HTTPException(
+            status_code=401, detail="Session not found, please log in again"
+        )
+
+    if session.expires_at < datetime.now(timezone.utc):
+        await db.delete(session)
+        await db.commit()
+        raise HTTPException(
+            status_code=401, detail="Session expired, please log in again"
+        )
+
+    tokens = create_auth_tokens({"sub": str(user_id)})
+
+    session.refresh_token = tokens["refresh_token"]
+    session.expires_at = datetime.now(timezone.utc) + timedelta(days=30)
+    await db.commit()
 
     response.set_cookie(
         key="access_token",
-        value=new_access_token,
+        value=tokens["access_token"],
         **ACCESS_TOKEN_COOKIE_OPTIONS,
+    )
+    response.set_cookie(
+        key="refresh_token",
+        value=tokens["refresh_token"],
+        **REFRESH_TOKEN_COOKIE_OPTIONS,
     )
 
     return success_response(message="Access token refreshed.")
 
 
-async def logout_user(response: Response):
+async def logout_user(request: Request, response: Response, db: AsyncSession):
+    refresh_token = request.cookies.get("refresh_token")
+
+    if refresh_token:
+        result = await db.execute(
+            select(Session).where(Session.refresh_token == refresh_token)
+        )
+        session = result.scalar_one_or_none()
+        if session:
+            await db.delete(session)
+            await db.commit()
+
     response.delete_cookie("access_token", path="/")
     response.delete_cookie("refresh_token", path="/auth/refresh")
+
     return success_response(message="Logged out successfully.")
