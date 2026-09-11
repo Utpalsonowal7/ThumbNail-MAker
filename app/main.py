@@ -1,4 +1,4 @@
-from fastapi import FastAPI, Request
+from fastapi import FastAPI, Request, APIRouter
 import time
 from contextlib import asynccontextmanager
 from fastapi.middleware.cors import CORSMiddleware
@@ -55,8 +55,12 @@ async def measure_request_time(request: Request, call_next):
     return response
 
 
-app.include_router(auth_route)
-app.include_router(thumbnail_router)
+api_router = APIRouter(prefix="/api")
+
+api_router.include_router(auth_route)
+api_router.include_router(thumbnail_router)
+
+app.include_router(api_router)
 
 
 @app.get("/")

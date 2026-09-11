@@ -48,13 +48,14 @@ async def generate_thumbnail(
     db.add(job)
 
     await db.flush()
+    await db.commit()
 
     await queue.redis_pool.enqueue_job(
         "generate_thumbnail",
         job.id,
     )
 
-    await db.commit()
+    
 
     return {
         "message": "Thumbnail generation queued",

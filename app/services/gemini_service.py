@@ -6,6 +6,7 @@ MODEL = "gemini-3.1-flash-image"
 
 
 async def generate_from_prompt(prompt: str) -> bytes:
+    
     response = await client.aio.interactions.create(
         model=MODEL,
         input=prompt,
