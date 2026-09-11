@@ -9,6 +9,10 @@ from app.models.jobs import Job
 from app.models.user import User
 from app.services.image_kit_service import upload_image_to_imagekit
 from app.workers import queue
+from fastapi import HTTPException
+from sqlalchemy import select
+from app.models.thumbnails import Thumbnail
+
 # from app.services.auth import get_current_user
 
 router = APIRouter(
@@ -55,11 +59,37 @@ async def generate_thumbnail(
         job.id,
     )
 
-    
-
     return {
         "message": "Thumbnail generation queued",
         "jobId": job.id,
         "generationType": generation_type,
         "status": "QUEUED",
+    }
+
+
+@router.get("/jobs/{job_id}")
+async def get_job_status(
+    job_id: int,
+    db: AsyncSession = Depends(get_session),
+):
+    result = await db.execute(select(Job).where(Job.id == job_id))
+
+    job = result.scalar_one_or_none()
+
+    if not job:
+        raise HTTPException(
+            status_code=404,
+            detail="Job not found",
+        )
+
+    result = await db.execute(select(Thumbnail).where(Thumbnail.job_id == job.id))
+
+    thumbnail = result.scalar_one_or_none()
+
+    return {
+        "jobId": job.id,
+        "status": job.status,
+        "generationType": job.generationType,
+        "imageUrl": thumbnail.generatedImageUrl if thumbnail else None,
+        "error": thumbnail.errorMessage if thumbnail else None,
     }
