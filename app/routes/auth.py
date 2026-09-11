@@ -16,6 +16,8 @@ from app.services.auth import (
     logout_user,
     refresh_access_token,
 )
+from app.services.send_otp import send_otp
+from app.schemas.user import Email
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
@@ -93,3 +95,8 @@ async def github_auth_callback(
     db: AsyncSession = Depends(get_session),
 ):
     return await github_callback(code, state, request, db)
+
+
+@router.post("/send-otp")
+async def send_otp_route(email: Email):
+    return await send_otp(email)
