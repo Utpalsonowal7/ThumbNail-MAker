@@ -4,7 +4,11 @@ from typing import AsyncGenerator
 
 from app.config import DATABASE_URL
 
-engine = create_async_engine(DATABASE_URL)
+engine = create_async_engine(
+    DATABASE_URL,
+    pool_pre_ping=True,
+    pool_recycle=1800,
+)
 
 sessionLocal = async_sessionmaker(engine, expire_on_commit=False)
 
