@@ -6,6 +6,7 @@ from fastapi import BackgroundTasks
 from app.core.redis import redis
 from app.utils.email_templates import send_otp_email
 from app.utils.rate_limiter import rate_limit
+from fastapi import HTTPException
 # from app.schemas.user import Email
 
 import time
@@ -19,6 +20,11 @@ async def send_otp(email: str, background_tasks: BackgroundTasks):
         limit=3,
         window=300,
     )
+
+    existOtp = redis.get(otp_key(email))
+
+    if existOtp:
+        raise HTTPException(status_code=400, detail="Email already sent, check your email")
 
 
     key = otp_key(email)
