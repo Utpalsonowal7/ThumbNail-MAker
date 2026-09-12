@@ -5,6 +5,7 @@ from app.workers import queue
 from fastapi import BackgroundTasks
 from app.core.redis import redis
 from app.utils.email_templates import send_otp_email
+from app.utils.rate_limiter import rate_limit
 # from app.schemas.user import Email
 
 import time
@@ -12,6 +13,14 @@ import time
 
 async def send_otp(email: str, background_tasks: BackgroundTasks):
     start = time.perf_counter()
+
+    await rate_limit(
+        key=f"rate:otp:{email}",
+        limit=3,
+        window=300,
+    )
+
+
     key = otp_key(email)
     otp = generate_otp()
 
