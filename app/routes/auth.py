@@ -6,6 +6,7 @@ from app.dependencies.auth import get_current_user
 from app.models.user import User
 from app.schemas.user import CreateUser, VerifyOTP, LoginUser
 from app.services.auth import (
+    change_password,
     github_callback,
     github_login_redirect,
     google_callback,
@@ -100,3 +101,15 @@ async def github_auth_callback(
 @router.post("/send-otp")
 async def send_otp_route(email: Email, background_tasks: BackgroundTasks):
     return await send_otp(str(email.email), background_tasks)
+
+
+@router.post("/forgot-password")
+async def forgot_password(
+    email: Email,
+    background_tasks: BackgroundTasks,
+    db: AsyncSession = Depends(get_session),
+    req=Request,
+):
+    return await change_password(
+        email=email, background_task=background_tasks, db=db, req=req
+    )

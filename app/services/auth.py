@@ -1,6 +1,6 @@
 from urllib.parse import urlencode
 
-from fastapi import HTTPException, Request, Response
+from fastapi import HTTPException, Request, Response, BackgroundTasks
 from fastapi.responses import RedirectResponse
 from sqlalchemy.exc import IntegrityError
 from httpx import request
@@ -11,10 +11,13 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from datetime import datetime, timedelta, timezone
 import secrets
 import httpx
+from hashlib import  sha256
+from secrets import token_urlsafe
 
 from app.models.user import User
 from app.models.sessions import Session
-from app.schemas.user import CreateUser, VerifyOTP, LoginUser
+from app.schemas.user import CreateUser, VerifyOTP, LoginUser, Email
+from app.utils.email_templates import send_reset_password_email
 from app.utils.jwt import create_auth_tokens, create_access_token, decode_refresh_token
 from app.core.redis import redis
 from app.utils.otpKey import otp_key
@@ -461,3 +464,51 @@ async def github_callback(
     await _set_auth_cookies(redirect_response, request, user.id, db)
 
     return redirect_response
+
+
+async def change_password(
+    email: Email,
+    background_task: BackgroundTasks,
+    db: AsyncSession,
+    req:Request
+):
+    result = await db.execute(select(User).where(User.email == email.email))
+
+    user = result.scalar_one_or_none()
+
+    if not user:
+        raise HTTPException(
+            status_code=404,
+            detail="User not found",
+        )
+
+  
+    token = token_urlsafe(32)
+
+  
+    hash_token = sha256(token.encode()).hexdigest()
+
+  
+    key = f"password-reset:{email.email}"
+
+    await redis.set(
+        key,
+        hash_token,
+        ex=600,  # 10 minutes
+    )
+
+   
+    reset_url = (
+    f"{req.url.scheme}://{req.url.netloc}"
+    f"/api/auth/reset-password/{token}"
+   )
+
+    background_task.add_task(
+        send_reset_password_email,
+        email.email,
+        reset_url,
+    )
+
+    return {
+        "message": "Password reset link sent",
+    }
