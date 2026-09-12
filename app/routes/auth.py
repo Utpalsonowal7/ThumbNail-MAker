@@ -105,10 +105,10 @@ async def send_otp_route(email: Email, background_tasks: BackgroundTasks):
 
 @router.post("/forgot-password")
 async def forgot_password(
+    req:Request,
     email: Email,
     background_tasks: BackgroundTasks,
     db: AsyncSession = Depends(get_session),
-    req=Request,
 ):
     return await change_password(
         email=email, background_task=background_tasks, db=db, req=req
