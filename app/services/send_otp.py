@@ -21,13 +21,13 @@ async def send_otp(email: str, background_tasks: BackgroundTasks):
         window=300,
     )
 
-    existOtp = redis.get(otp_key(email))
+    key = otp_key(email)
 
+    existOtp = redis.get(otp_key(email))
+    
     if existOtp:
         raise HTTPException(status_code=400, detail="Email already sent, check your email")
-
-
-    key = otp_key(email)
+    
     otp = generate_otp()
 
     # await queue.redis_pool.enqueue_job("send_otp_emails", email, otp)
