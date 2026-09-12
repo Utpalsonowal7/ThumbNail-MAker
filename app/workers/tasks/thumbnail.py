@@ -1,4 +1,5 @@
 from app.core.db import sessionLocal
+from app.models.user import User
 from app.services.thumbnail_service import process_thumbnail_job
 
 

@@ -4,12 +4,11 @@ from app.utils.response import success_response
 from app.workers import queue
 
 from app.core.redis import redis
-from app.schemas.user import Email
+# from app.schemas.user import Email
 
 import time
 
-
-async def send_otp(email: Email):
+async def send_otp(email: str):
     start = time.perf_counter()
     key = otp_key(email)
     otp = generate_otp()

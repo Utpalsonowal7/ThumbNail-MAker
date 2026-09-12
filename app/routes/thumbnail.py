@@ -42,7 +42,7 @@ async def generate_thumbnail(
         generation_type = "EDIT_IMAGE"
 
     job = Job(
-        user_id=4,
+        user_id=2,
         prompt=prompt,
         originalImageUrl=original_image_url,
         generationType=generation_type,

@@ -2,7 +2,7 @@ import base64
 
 from app.core.gemini import client
 
-MODEL = "gemini-3.1-flash-image"
+MODEL = "gemini-2.5-flash-image"
 
 
 async def generate_from_prompt(prompt: str) -> bytes:

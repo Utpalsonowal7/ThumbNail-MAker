@@ -1,3 +1,8 @@
+# import asyncio
+
+# asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
+
+
 from arq.connections import RedisSettings
 
 from app.config import REDIS_URL

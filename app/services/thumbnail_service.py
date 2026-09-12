@@ -14,7 +14,7 @@ async def process_thumbnail_job(db: AsyncSession, job_id: int) -> None:
 
     if not job:
         return
-
+#
     job.status = "PROCESSING"
     await db.commit()
 
