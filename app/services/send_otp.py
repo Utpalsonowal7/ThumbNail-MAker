@@ -9,13 +9,14 @@ from app.utils.email_templates import send_otp_email
 
 import time
 
-async def send_otp(email: str):
+
+async def send_otp(email: str, background_tasks: BackgroundTasks):
     start = time.perf_counter()
     key = otp_key(email)
     otp = generate_otp()
 
     # await queue.redis_pool.enqueue_job("send_otp_emails", email, otp)
-    BackgroundTasks.add_task(send_otp_email, email, otp)
+    background_tasks.add_task(send_otp_email, email, otp)
     await redis.set(key, otp, ex=300)
 
     print(f"ARQ enqueue: {(time.perf_counter() - start) * 1000:.2f} ms")
