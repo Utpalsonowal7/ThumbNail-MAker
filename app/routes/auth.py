@@ -99,4 +99,4 @@ async def github_auth_callback(
 
 @router.post("/send-otp")
 async def send_otp_route(email: Email, background_tasks: BackgroundTasks):
-    return await send_otp(str(email.email))
+    return await send_otp(str(email.email), background_tasks)
