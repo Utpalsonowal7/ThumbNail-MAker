@@ -473,7 +473,7 @@ async def change_password(
     req:Request
 ):
     result = await db.execute(select(User).where(User.email == email.email))
-
+    print(result)
     user = result.scalar_one_or_none()
 
     if not user:
