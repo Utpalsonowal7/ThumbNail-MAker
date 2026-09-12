@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, Request, Response
+from fastapi import APIRouter, Depends, Request, Response, BackgroundTasks
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.db import get_session
@@ -98,5 +98,5 @@ async def github_auth_callback(
 
 
 @router.post("/send-otp")
-async def send_otp_route(email: Email):
+async def send_otp_route(email: Email, background_tasks: BackgroundTasks):
     return await send_otp(str(email.email))
