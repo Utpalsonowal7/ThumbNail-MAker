@@ -1,3 +1,4 @@
+import time
 from urllib.parse import urlencode
 
 from fastapi import HTTPException, Request, Response, BackgroundTasks
@@ -11,17 +12,18 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from datetime import datetime, timedelta, timezone
 import secrets
 import httpx
-from hashlib import  sha256
+from hashlib import sha256
 from secrets import token_urlsafe
 
 from app.models.user import User
 from app.models.sessions import Session
-from app.schemas.user import CreateUser, VerifyOTP, LoginUser, Email
+from app.schemas.user import CreateUser, VerifyOTP, LoginUser, Email, PsssToken
 from app.utils.email_templates import send_reset_password_email
 from app.utils.jwt import create_auth_tokens, create_access_token, decode_refresh_token
 from app.core.redis import redis
-from app.utils.otpKey import otp_key
+from app.utils.key_maker import otp_key, password_reset
 from app.utils.response import success_response
+from app.utils.rate_limiter import rate_limit
 from app.utils.cookie_options import (
     ACCESS_TOKEN_COOKIE_OPTIONS,
     REFRESH_TOKEN_COOKIE_OPTIONS,
@@ -42,8 +44,7 @@ from app.config import (
     GITHUB_USER_EMAILS_URI,
 )
 
-
-FRONTEND_LOGIN_ERROR_URL="https://thumbnail-maker-frontend.vercel.app/login?error="
+FRONTEND_LOGIN_ERROR_URL = "https://thumbnail-maker-frontend.vercel.app/login?error="
 FRONTEND_DASHBOARD_URL = "http://127.0.0.1:5500/t.html"
 password_hash = PasswordHash.recommended()
 
@@ -77,7 +78,9 @@ async def _set_auth_cookies(
     )
 
 
-async def register_user(db: AsyncSession, user_data: CreateUser, response: Response, request: Request):
+async def register_user(
+    db: AsyncSession, user_data: CreateUser, response: Response, request: Request
+):
     result = await db.execute(select(User).where(User.email == user_data.email))
     existing_user = result.scalar_one_or_none()
 
@@ -94,8 +97,10 @@ async def register_user(db: AsyncSession, user_data: CreateUser, response: Respo
         await db.commit()
     except Exception as e:
         await db.rollback()
-        raise HTTPException(status_code=500, detail="An error occurred while registering the user")
-    
+        raise HTTPException(
+            status_code=500, detail="An error occurred while registering the user"
+        )
+
     await db.refresh(new_user)
 
     await _set_auth_cookies(response, request, new_user.id, db)
@@ -126,7 +131,7 @@ async def verify_user(data: VerifyOTP, db: AsyncSession):
     await db.commit()
     await db.refresh(user)
 
-    await redis.delete(key) 
+    await redis.delete(key)
 
     return success_response(
         message="OTP verified successfully.",
@@ -300,7 +305,7 @@ async def google_callback(
 
     google_id = profile["id"]
     email = profile.get("email")
-    name = profile.get("name") 
+    name = profile.get("name")
     avatar = profile.get("picture")
     email_verified = profile.get("verified_email", False)
 
@@ -467,13 +472,12 @@ async def github_callback(
 
 
 async def change_password(
-    email: Email,
-    background_task: BackgroundTasks,
-    db: AsyncSession,
-    req:Request
+    email: Email, background_task: BackgroundTasks, db: AsyncSession, req: Request
 ):
+
+    await rate_limit(email.email, 1 , 600, "sent check email of not get try after 10 min")
     result = await db.execute(select(User).where(User.email == email.email))
-    print(result)
+
     user = result.scalar_one_or_none()
 
     if not user:
@@ -482,26 +486,19 @@ async def change_password(
             detail="User not found",
         )
 
-  
     token = token_urlsafe(32)
-
-  
     hash_token = sha256(token.encode()).hexdigest()
-
-  
-    key = f"password-reset:{email.email}"
+    key = password_reset(hash_token)
 
     await redis.set(
         key,
-        hash_token,
-        ex=600,  # 10 minutes
+        user.email,
+        ex=600,
     )
 
-   
     reset_url = (
-    f"{req.url.scheme}://{req.url.netloc}"
-    f"/api/auth/reset-password/{token}"
-   )
+        f"{req.url.scheme}://{req.url.netloc}" f"/api/auth/reset-password/{token}"
+    )
 
     background_task.add_task(
         send_reset_password_email,
@@ -511,4 +508,54 @@ async def change_password(
 
     return {
         "message": "Password reset link sent",
+    }
+
+
+async def verify_reset_password_token(user_token: str):
+    hash_token = sha256(user_token.encode()).hexdigest()
+    key = password_reset(hash_token)
+
+    email = await redis.get(key)
+
+    if not email:
+        raise HTTPException(
+            status_code=400,
+            detail="Invalid or expired password reset token",
+        )
+
+    if isinstance(email, bytes):
+        email = email.decode()
+
+    return email
+
+
+async def reset_password(
+    db: AsyncSession,
+    token: str,
+    password: str,
+):
+
+    email = await verify_reset_password_token(token)
+
+    result = await db.execute(select(User).where(User.email == email))
+
+    user = result.scalar_one_or_none()
+
+    if not user:
+        raise HTTPException(
+            status_code=404,
+            detail="User not found",
+        )
+
+    user.password = password_hash.hash(password)
+
+    await db.commit()
+
+    hash_token = sha256(token.encode()).hexdigest()
+    key = password_reset(hash_token)
+
+    await redis.delete(key)
+
+    return {
+        "message": "Password reset successfully",
     }

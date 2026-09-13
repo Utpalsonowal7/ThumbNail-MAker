@@ -9,6 +9,7 @@ async def rate_limit(
     key: str,
     limit: int,
     window: int,
+    message:str="Rate limit exceeded. Try again later."
 ):
     now = time.time()
     window_start = now - window
@@ -26,7 +27,7 @@ async def rate_limit(
     if count >= limit:
         raise HTTPException(
             status_code=429,
-            detail="Rate limit exceeded. Try again later.",
+            detail=message,
         )
 
     

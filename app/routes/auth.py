@@ -1,10 +1,11 @@
 from fastapi import APIRouter, Depends, Request, Response, BackgroundTasks
+from fastapi.responses import RedirectResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.db import get_session
 from app.dependencies.auth import get_current_user
 from app.models.user import User
-from app.schemas.user import CreateUser, VerifyOTP, LoginUser
+from app.schemas.user import CreateUser, PsssToken, ResetPassword, VerifyOTP, LoginUser
 from app.services.auth import (
     change_password,
     github_callback,
@@ -12,6 +13,8 @@ from app.services.auth import (
     google_callback,
     google_login_redirect,
     register_user,
+    reset_password,
+    verify_reset_password_token,
     verify_user,
     login_user,
     logout_user,
@@ -112,4 +115,23 @@ async def forgot_password(
 ):
     return await change_password(
         email=email, background_task=background_tasks, db=db, req=req
+    )
+
+
+@router.get("/reset-password/{token}")
+async def verify_reset_password(token: str):
+    await verify_reset_password_token(token)
+
+    return RedirectResponse(url=f"http://127.0.0.1:5500/t.html?token={token}")
+
+
+@router.post("/reset-password")
+async def reset_password_route(
+    data: ResetPassword,
+    db: AsyncSession = Depends(get_session),
+):
+    return await reset_password(
+        db=db,
+        token=data.token,
+        password=data.password,
     )

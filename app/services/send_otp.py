@@ -1,5 +1,5 @@
 from app.utils.otp import generate_otp
-from app.utils.otpKey import otp_key
+from app.utils.key_maker import otp_key
 from app.utils.response import success_response
 from app.workers import queue
 from fastapi import BackgroundTasks

@@ -16,17 +16,15 @@ from app.workers.queue import init_queue, close_queue
 from app.routes.auth import router as auth_route
 from app.routes.thumbnail import router as thumbnail_router
 
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     async with engine.begin() as connection:
         await connection.run_sync(Base.metadata.create_all)
 
-
-    await init_queue()
-
     yield
 
-    await close_queue()
+
 
 
 app = FastAPI(lifespan=lifespan)

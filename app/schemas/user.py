@@ -6,13 +6,25 @@ class CreateUser(BaseModel):
     email: EmailStr
     password: str | None = None
 
+
 class Email(BaseModel):
     email: EmailStr
+
 
 class VerifyOTP(BaseModel):
     email: EmailStr
     otp: str
 
+
 class LoginUser(BaseModel):
-       email: EmailStr
-       password: str
+    email: EmailStr
+    password: str
+
+
+class PsssToken(BaseModel):
+    token: str
+
+
+class ResetPassword(BaseModel):
+    token: str
+    password: str
