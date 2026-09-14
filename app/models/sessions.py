@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import datetime, timezone
 
 from sqlalchemy import DateTime, ForeignKey, Index, String
 from sqlalchemy.orm import Mapped, mapped_column
@@ -17,18 +17,23 @@ class Session(Base):
 
     refreshToken: Mapped[str] = mapped_column(String(500), unique=True, nullable=False)
 
-    expiresAt: Mapped[datetime] = mapped_column(DateTime, nullable=False)
+    expiresAt: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
 
     ipAddress: Mapped[str | None] = mapped_column(String(45), nullable=True)
 
     userAgent: Mapped[str | None] = mapped_column(String(500), nullable=True)
 
     createdAt: Mapped[datetime] = mapped_column(
-        DateTime, default=datetime.utcnow, nullable=False
+    DateTime(timezone=True),
+    default=lambda: datetime.now(timezone.utc),
+    nullable=False,
     )
 
     updatedAt: Mapped[datetime] = mapped_column(
-        DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False
+    DateTime(timezone=True),
+    default=lambda: datetime.now(timezone.utc),
+    onupdate=lambda: datetime.now(timezone.utc),
+    nullable=False,
     )
 
     __table_args__ = (Index("ix_sessions_user_id_expires_at", "userId", "expiresAt"),)

@@ -45,19 +45,24 @@ async def verify_otp(data: VerifyOTP, db: AsyncSession = Depends(get_session)):
 async def login(
     data: LoginUser,
     response: Response,
+    rqe: Request,
     db: AsyncSession = Depends(get_session),
 ):
-    return await login_user(data, db, response)
+    return await login_user(data, db, response, rqe)
 
 
 @router.post("/refresh")
-async def refresh(request: Request, response: Response):
-    return await refresh_access_token(request, response)
+async def refresh(
+    request: Request, response: Response, db: AsyncSession = Depends(get_session)
+):
+    return await refresh_access_token(request, response, db)
 
 
 @router.post("/logout")
-async def logout(response: Response):
-    return await logout_user(response)
+async def logout(
+    response: Response, req: Request, db: AsyncSession = Depends(get_session)
+):
+    return await logout_user(req, response, db)
 
 
 @router.get("/me")
@@ -66,7 +71,8 @@ async def get_me(current_user: User = Depends(get_current_user)):
         "id": current_user.id,
         "name": current_user.name,
         "email": current_user.email,
-        "is_verified": current_user.is_verified,
+        "avataar": current_user.avatar or "https://placehold.net/avatar-2.svg",
+        "is_verified": current_user.isEmailVerified,
     }
 
 
@@ -108,7 +114,7 @@ async def send_otp_route(email: Email, background_tasks: BackgroundTasks):
 
 @router.post("/forgot-password")
 async def forgot_password(
-    req:Request,
+    req: Request,
     email: Email,
     background_tasks: BackgroundTasks,
     db: AsyncSession = Depends(get_session),

@@ -44,16 +44,16 @@ from app.config import (
     GITHUB_USER_EMAILS_URI,
 )
 
-FRONTEND_LOGIN_ERROR_URL = "https://thumbnail-maker-frontend.vercel.app/login?error="
-FRONTEND_DASHBOARD_URL = "http://127.0.0.1:5500/t.html"
+
+FRONTEND_DASHBOARD_URL = "http://localhost:5173/dashboard"
 password_hash = PasswordHash.recommended()
 
 
 async def _set_auth_cookies(
-    response: Response, req: Request, user_id: str, db: AsyncSession
+    response: Response, req: Request, user_id: int, db: AsyncSession
 ):
     tokens = create_auth_tokens({"sub": str(user_id)})
-
+  
     session = Session(
         userId=user_id,
         refreshToken=tokens["refresh_token"],
@@ -63,7 +63,14 @@ async def _set_auth_cookies(
     )
 
     db.add(session)
-    await db.commit()
+    try:
+        await db.commit()
+       
+    except Exception as e:
+         await db.rollback()
+      
+         raise
+    
     await db.refresh(session)
 
     response.set_cookie(
@@ -89,7 +96,7 @@ async def register_user(
 
     hash_pass = password_hash.hash(user_data.password) if user_data.password else None
 
-    new_user = User(name=user_data.name, email=user_data.email, password=hash_pass)
+    new_user = User(name=user_data.name, email=user_data.email, password=hash_pass,  isEmailVerified=True)
 
     db.add(new_user)
 
@@ -121,40 +128,29 @@ async def verify_user(data: VerifyOTP, db: AsyncSession):
     if stored_otp.decode("utf-8") != data.otp:
         raise HTTPException(status_code=400, detail="Invalid OTP")
 
-    result = await db.execute(select(User).where(User.email == data.email))
-    user = result.scalar_one_or_none()
-
-    if not user:
-        raise HTTPException(status_code=404, detail="User not found")
-
-    user.is_verified = True
-    await db.commit()
-    await db.refresh(user)
-
-    await redis.delete(key)
-
     return success_response(
         message="OTP verified successfully.",
-        data={"id": user.id, "name": user.name, "email": user.email},
+        data=data.email,
     )
 
 
-async def login_user(data: LoginUser, db: AsyncSession, response: Response):
+async def login_user(data: LoginUser, db: AsyncSession, response: Response, request: Request):
     result = await db.execute(select(User).where(User.email == data.email))
     user = result.scalar_one_or_none()
 
     if not user:
-        raise HTTPException(status_code=401, detail="Invalid email or password")
+        raise HTTPException(status_code=400, detail="Invalid email or password")
 
     if not password_hash.verify(data.password, user.password):
-        raise HTTPException(status_code=401, detail="Invalid email or password")
+        raise HTTPException(status_code=400, detail="Invalid email or password")
 
-    if not user.is_verified:
+    if not user.isEmailVerified:
         raise HTTPException(
             status_code=403, detail="Please verify your email before logging in"
         )
 
-    await _set_auth_cookies(response, request, user.id, db, request)
+    a = await _set_auth_cookies(response, request, user.id, db)
+    print(a)
 
     return success_response(
         message="Logged in successfully.",
@@ -164,16 +160,19 @@ async def login_user(data: LoginUser, db: AsyncSession, response: Response):
 
 async def refresh_access_token(request: Request, response: Response, db: AsyncSession):
     refresh_token = request.cookies.get("refresh_token")
+    print(refresh_token)
     if not refresh_token:
         raise HTTPException(status_code=401, detail="No refresh token provided")
 
     try:
         payload = decode_refresh_token(refresh_token)
-    except jwt.ExpiredSignatureError:
+    except jwt.ExpiredSignatureError as e:
+        print("JWT EXPIRED 1:", repr(e))
         raise HTTPException(
             status_code=401, detail="Refresh token expired, please log in again"
         )
-    except jwt.InvalidTokenError:
+    except jwt.InvalidTokenError as e:
+        print("JWT EXPIRED 1:", repr(e))
         raise HTTPException(status_code=401, detail="Invalid refresh token")
 
     user_id = payload.get("sub")
@@ -181,7 +180,7 @@ async def refresh_access_token(request: Request, response: Response, db: AsyncSe
         raise HTTPException(status_code=401, detail="Invalid token payload")
 
     result = await db.execute(
-        select(Session).where(Session.refresh_token == refresh_token)
+        select(Session).where(Session.refreshToken == refresh_token)
     )
     session = result.scalar_one_or_none()
 
@@ -190,7 +189,7 @@ async def refresh_access_token(request: Request, response: Response, db: AsyncSe
             status_code=401, detail="Session not found, please log in again"
         )
 
-    if session.expires_at < datetime.now(timezone.utc):
+    if session.expiresAt < datetime.now(timezone.utc):
         await db.delete(session)
         await db.commit()
         raise HTTPException(
@@ -199,8 +198,8 @@ async def refresh_access_token(request: Request, response: Response, db: AsyncSe
 
     tokens = create_auth_tokens({"sub": str(user_id)})
 
-    session.refresh_token = tokens["refresh_token"]
-    session.expires_at = datetime.now(timezone.utc) + timedelta(days=30)
+    session.refreshToken = tokens["refresh_token"]
+    session.expiresAt = datetime.now(timezone.utc) + timedelta(days=30)
     await db.commit()
 
     response.set_cookie(
@@ -222,7 +221,7 @@ async def logout_user(request: Request, response: Response, db: AsyncSession):
 
     if refresh_token:
         result = await db.execute(
-            select(Session).where(Session.refresh_token == refresh_token)
+            select(Session).where(Session.refreshToken == refresh_token)
         )
         session = result.scalar_one_or_none()
         if session:
@@ -230,7 +229,7 @@ async def logout_user(request: Request, response: Response, db: AsyncSession):
             await db.commit()
 
     response.delete_cookie("access_token", path="/")
-    response.delete_cookie("refresh_token", path="/auth/refresh")
+    response.delete_cookie("refresh_token", path="/")
 
     return success_response(message="Logged out successfully.")
 
@@ -257,7 +256,7 @@ async def google_login_redirect(
         key="oauth_state",
         value=state,
         httponly=True,
-        secure=True,
+        secure=False,
         samesite="lax",
         max_age=600,
     )
@@ -271,9 +270,13 @@ async def google_callback(
     response: Response,
     db: AsyncSession,
 ) -> RedirectResponse:
+    print("ALL COOKIES:", request.cookies)
+    print("OAUTH STATE:", request.cookies.get("oauth_state"))
+    print("GOOGLE STATE:", state)
     cookie_state = request.cookies.get("oauth_state")
+  
     if not cookie_state or cookie_state != state:
-        return RedirectResponse(url=f"{FRONTEND_LOGIN_ERROR_URL}invalid_state")
+        raise HTTPException(status_code=400, detail="adkadk")
 
     async with httpx.AsyncClient() as client:
         token_resp = await client.post(
@@ -288,7 +291,7 @@ async def google_callback(
         )
 
     if token_resp.status_code != 200:
-        return RedirectResponse(url=f"{FRONTEND_LOGIN_ERROR_URL}token_exchange_failed")
+        raise HTTPException(status_code=400, detail="adkadk")
 
     google_access_token = token_resp.json().get("access_token")
 
@@ -299,7 +302,7 @@ async def google_callback(
         )
 
     if userinfo_resp.status_code != 200:
-        return RedirectResponse(url=f"{FRONTEND_LOGIN_ERROR_URL}userinfo_failed")
+        raise HTTPException(status_code=400, detail="adkadk")
 
     profile = userinfo_resp.json()
 
@@ -310,16 +313,14 @@ async def google_callback(
     email_verified = profile.get("verified_email", False)
 
     if not email or not email_verified:
-        return RedirectResponse(url=f"{FRONTEND_LOGIN_ERROR_URL}email_not_verified")
+       raise HTTPException(status_code=400, detail="adkadk")
 
     result = await db.execute(select(User).where(User.email == email))
     user = result.scalar_one_or_none()
 
     if user:
         if user.provider == "EMAIL":
-            return RedirectResponse(
-                url=f"{FRONTEND_LOGIN_ERROR_URL}account_exists_use_email_login"
-            )
+            raise HTTPException(status_code=400, detail="adkadk")
     else:
         user = User(
             name=name,
@@ -336,7 +337,7 @@ async def google_callback(
             await db.commit()
         except IntegrityError:
             await db.rollback()
-            return RedirectResponse(url=f"{FRONTEND_LOGIN_ERROR_URL}account_conflict")
+            raise HTTPException(status_code=400, detail="adkadk")
 
         await db.refresh(user)
 

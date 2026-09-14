@@ -1,7 +1,8 @@
-from fastapi import FastAPI, Request, APIRouter
+from fastapi import FastAPI, Request, APIRouter, HTTPException
 import time
 from contextlib import asynccontextmanager
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 
 from app.core.db import engine, Base
 from app.models.user import User
@@ -25,9 +26,29 @@ async def lifespan(app: FastAPI):
     yield
 
 
-
-
 app = FastAPI(lifespan=lifespan)
+
+
+@app.exception_handler(HTTPException)
+async def http_exception_handler(
+    request: Request,
+    exc: HTTPException,
+):
+    print(
+        f"HTTP ERROR | "
+        f"{request.method} {request.url.path} | "
+        f"{exc.status_code} | "
+        f"{exc.detail}"
+    )
+
+    return JSONResponse(
+        status_code=exc.status_code,
+        content={
+            "detail": exc.detail,
+        },
+        headers=exc.headers,
+    )
+
 
 origins = ["http://localhost:3000", "https://yourdomain.com", "http://127.0.0.1:5500"]
 
