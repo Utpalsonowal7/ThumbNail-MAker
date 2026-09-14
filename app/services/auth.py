@@ -2,7 +2,7 @@ import time
 from urllib.parse import urlencode
 
 from fastapi import HTTPException, Request, Response, BackgroundTasks
-from fastapi.responses import RedirectResponse
+from fastapi.responses import JSONResponse, RedirectResponse
 from sqlalchemy.exc import IntegrityError
 from httpx import request
 import jwt
@@ -46,6 +46,7 @@ from app.config import (
 
 
 FRONTEND_DASHBOARD_URL = "http://localhost:5173/dashboard"
+
 password_hash = PasswordHash.recommended()
 
 
@@ -53,7 +54,7 @@ async def _set_auth_cookies(
     response: Response, req: Request, user_id: int, db: AsyncSession
 ):
     tokens = create_auth_tokens({"sub": str(user_id)})
-  
+    print(tokens)
     session = Session(
         userId=user_id,
         refreshToken=tokens["refresh_token"],
@@ -86,7 +87,7 @@ async def _set_auth_cookies(
 
 
 async def register_user(
-    db: AsyncSession, user_data: CreateUser, response: Response, request: Request
+    db: AsyncSession, user_data: CreateUser,  request: Request
 ):
     result = await db.execute(select(User).where(User.email == user_data.email))
     existing_user = result.scalar_one_or_none()
@@ -109,13 +110,16 @@ async def register_user(
         )
 
     await db.refresh(new_user)
-
-    await _set_auth_cookies(response, request, new_user.id, db)
-
-    return success_response(
+    response = JSONResponse(
+    content=success_response(
         message="Registration successful. Please verify your email.",
         data={"id": new_user.id, "name": new_user.name, "email": new_user.email},
     )
+)
+
+    await _set_auth_cookies(response, request, new_user.id, db)
+
+    return response
 
 
 async def verify_user(data: VerifyOTP, db: AsyncSession):
@@ -149,9 +153,8 @@ async def login_user(data: LoginUser, db: AsyncSession, response: Response, requ
             status_code=403, detail="Please verify your email before logging in"
         )
 
-    a = await _set_auth_cookies(response, request, user.id, db)
-    print(a)
-
+    await _set_auth_cookies(response, request, user.id, db)
+   
     return success_response(
         message="Logged in successfully.",
         data={"id": user.id, "name": user.name, "email": user.email},
@@ -234,49 +237,29 @@ async def logout_user(request: Request, response: Response, db: AsyncSession):
     return success_response(message="Logged out successfully.")
 
 
-async def google_login_redirect(
-    request: Request, response: Response
-) -> RedirectResponse:
-    state = secrets.token_urlsafe(32)
-
+async def google_login_redirect() -> RedirectResponse:
     params = {
         "client_id": GOOGLE_CLIENT_ID,
         "redirect_uri": GOOGLE_REDIRECT_URI,
         "response_type": "code",
         "scope": "openid email profile",
-        "state": state,
         "access_type": "offline",
         "prompt": "select_account",
     }
-    query = urlencode(params)
-    url = f"{GOOGLE_AUTH_URI}?{query}"
 
-    redirect_response = RedirectResponse(url=url)
-    redirect_response.set_cookie(
-        key="oauth_state",
-        value=state,
-        httponly=True,
-        secure=False,
-        samesite="lax",
-        max_age=600,
+    url = f"{GOOGLE_AUTH_URI}?{urlencode(params)}"
+
+    return RedirectResponse(
+        url=url,
+        status_code=302,
     )
-    return redirect_response
 
 
 async def google_callback(
     code: str,
-    state: str,
     request: Request,
-    response: Response,
     db: AsyncSession,
 ) -> RedirectResponse:
-    print("ALL COOKIES:", request.cookies)
-    print("OAUTH STATE:", request.cookies.get("oauth_state"))
-    print("GOOGLE STATE:", state)
-    cookie_state = request.cookies.get("oauth_state")
-  
-    if not cookie_state or cookie_state != state:
-        raise HTTPException(status_code=400, detail="adkadk")
 
     async with httpx.AsyncClient() as client:
         token_resp = await client.post(
@@ -291,9 +274,18 @@ async def google_callback(
         )
 
     if token_resp.status_code != 200:
-        raise HTTPException(status_code=400, detail="adkadk")
+        raise HTTPException(
+            status_code=400,
+            detail="Google token exchange failed",
+        )
 
     google_access_token = token_resp.json().get("access_token")
+
+    if not google_access_token:
+        raise HTTPException(
+            status_code=400,
+            detail="Google access token missing",
+        )
 
     async with httpx.AsyncClient() as client:
         userinfo_resp = await client.get(
@@ -302,7 +294,10 @@ async def google_callback(
         )
 
     if userinfo_resp.status_code != 200:
-        raise HTTPException(status_code=400, detail="adkadk")
+        raise HTTPException(
+            status_code=400,
+            detail="Failed to get Google user",
+        )
 
     profile = userinfo_resp.json()
 
@@ -313,36 +308,57 @@ async def google_callback(
     email_verified = profile.get("verified_email", False)
 
     if not email or not email_verified:
-       raise HTTPException(status_code=400, detail="adkadk")
+        raise HTTPException(
+            status_code=400,
+            detail="Google email is not verified",
+        )
 
     result = await db.execute(select(User).where(User.email == email))
+
     user = result.scalar_one_or_none()
 
     if user:
         if user.provider == "EMAIL":
-            raise HTTPException(status_code=400, detail="adkadk")
+            raise HTTPException(
+                status_code=400,
+                detail="Account already exists with email/password",
+            )
     else:
         user = User(
             name=name,
             email=email,
             password=None,
-            isEmailVerified=email_verified,
+            isEmailVerified=True,
             provider="GOOGLE",
             providerId=google_id,
             avatar=avatar,
         )
+
         db.add(user)
 
         try:
             await db.commit()
         except IntegrityError:
             await db.rollback()
-            raise HTTPException(status_code=400, detail="adkadk")
+            raise HTTPException(
+                status_code=400,
+                detail="Account creation failed",
+            )
 
         await db.refresh(user)
 
-    redirect_response = RedirectResponse(url=FRONTEND_DASHBOARD_URL)
-    await _set_auth_cookies(redirect_response, request, user.id, db)
+   
+    redirect_response = RedirectResponse(
+        url="http://localhost:5173/dashboard",
+        status_code=302,
+    )
+
+    await _set_auth_cookies(
+        redirect_response,
+        request,
+        user.id,
+        db,
+    )
 
     return redirect_response
 
