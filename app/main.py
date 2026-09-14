@@ -55,7 +55,7 @@ origins = [
     "https://yourdomain.com",
     "http://127.0.0.1:5500",
     "http://localhost:5173",
-    "https://thu-phi.vercel.app/",
+    "https://thu-phi.vercel.app",
 ]
 
 app.add_middleware(
