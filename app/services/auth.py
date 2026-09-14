@@ -154,7 +154,8 @@ async def login_user(data: LoginUser, db: AsyncSession, response: Response, requ
         )
 
     await _set_auth_cookies(response, request, user.id, db)
-   
+    response.set_cookie(key="fakesession", value="fake-cookie-session-value")
+
     return success_response(
         message="Logged in successfully.",
         data={"id": user.id, "name": user.name, "email": user.email},
