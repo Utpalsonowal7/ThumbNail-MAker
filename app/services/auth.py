@@ -42,10 +42,9 @@ from app.config import (
     GITHUB_TOKEN_URI,
     GITHUB_USER_URI,
     GITHUB_USER_EMAILS_URI,
+    FRONT_END_URl,
 )
 
-
-FRONTEND_DASHBOARD_URL = "http://localhost:5173/dashboard"
 
 password_hash = PasswordHash.recommended()
 
@@ -348,9 +347,8 @@ async def google_callback(
 
         await db.refresh(user)
 
-   
     redirect_response = RedirectResponse(
-        url="http://localhost:5173/dashboard",
+        url=f"{FRONT_END_URl}dashboard",
         status_code=302,
     )
 
