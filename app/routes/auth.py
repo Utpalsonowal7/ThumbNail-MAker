@@ -20,6 +20,7 @@ from app.services.auth import (
     logout_user,
     refresh_access_token,
 )
+from app.config import FRONT_END_URL
 from app.services.send_otp import send_otp
 from app.schemas.user import Email
 
@@ -131,7 +132,7 @@ async def forgot_password(
 async def verify_reset_password(token: str):
     await verify_reset_password_token(token)
 
-    return RedirectResponse(url=f"http://127.0.0.1:5500/t.html?token={token}")
+    return RedirectResponse(url=f"{FRONT_END_URL}?token={token}")
 
 
 @router.post("/reset-password")

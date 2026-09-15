@@ -42,9 +42,8 @@ from app.config import (
     GITHUB_TOKEN_URI,
     GITHUB_USER_URI,
     GITHUB_USER_EMAILS_URI,
-    FRONT_END_URl,
+    FRONT_END_URL,
 )
-
 
 password_hash = PasswordHash.recommended()
 
@@ -153,7 +152,6 @@ async def login_user(data: LoginUser, db: AsyncSession, response: Response, requ
         )
 
     await _set_auth_cookies(response, request, user.id, db)
-    response.set_cookie(key="fakesession", value="fake-cookie-session-value")
 
     return success_response(
         message="Logged in successfully.",
@@ -170,12 +168,10 @@ async def refresh_access_token(request: Request, response: Response, db: AsyncSe
     try:
         payload = decode_refresh_token(refresh_token)
     except jwt.ExpiredSignatureError as e:
-        print("JWT EXPIRED 1:", repr(e))
         raise HTTPException(
             status_code=401, detail="Refresh token expired, please log in again"
         )
     except jwt.InvalidTokenError as e:
-        print("JWT EXPIRED 1:", repr(e))
         raise HTTPException(status_code=401, detail="Invalid refresh token")
 
     user_id = payload.get("sub")
@@ -348,9 +344,8 @@ async def google_callback(
 
         await db.refresh(user)
 
-    print("redirecting.......................")
     redirect_response = RedirectResponse(
-        url=f"{FRONT_END_URl}dashboard",
+        url=f"{FRONT_END_URL}dashboard",
         status_code=302,
     )
 
@@ -361,7 +356,6 @@ async def google_callback(
         db,
     )
 
-    response.set_cookie(key="fakesession", value="fake-cookie-session-value")
 
     return redirect_response
 
@@ -398,7 +392,7 @@ async def github_callback(
 ) -> RedirectResponse:
     cookie_state = request.cookies.get("oauth_state")
     if not cookie_state or cookie_state != state:
-        return RedirectResponse(url=f"{FRONTEND_LOGIN_ERROR_URL}invalid_state")
+        return RedirectResponse(url=f"{FRONT_END_URL}invalid_state")
 
     async with httpx.AsyncClient() as client:
         token_resp = await client.post(
@@ -413,13 +407,13 @@ async def github_callback(
         )
 
     if token_resp.status_code != 200:
-        return RedirectResponse(url=f"{FRONTEND_LOGIN_ERROR_URL}token_exchange_failed")
+        return RedirectResponse(url=f"{FRONT_END_URL}token_exchange_failed")
 
     token_data = token_resp.json()
     github_access_token = token_data.get("access_token")
 
     if not github_access_token:
-        return RedirectResponse(url=f"{FRONTEND_LOGIN_ERROR_URL}token_exchange_failed")
+        return RedirectResponse(url=f"{FRONT_END_URL}token_exchange_failed")
 
     auth_headers = {
         "Authorization": f"Bearer {github_access_token}",
@@ -430,7 +424,7 @@ async def github_callback(
         user_resp = await client.get(GITHUB_USER_URI, headers=auth_headers)
 
     if user_resp.status_code != 200:
-        return RedirectResponse(url=f"{FRONTEND_LOGIN_ERROR_URL}userinfo_failed")
+        return RedirectResponse(url=f"{FRONT_END_URL}userinfo_failed")
 
     profile = user_resp.json()
     print(f"GitHub profile: {profile}")
@@ -454,7 +448,7 @@ async def github_callback(
                 email = primary.get("email")
 
     if not email:
-        return RedirectResponse(url=f"{FRONTEND_LOGIN_ERROR_URL}email_not_verified")
+        return RedirectResponse(url=f"{FRONT_END_URL}email_not_verified")
 
     result = await db.execute(select(User).where(User.email == email))
     user = result.scalar_one_or_none()
@@ -462,7 +456,7 @@ async def github_callback(
     if user:
         if user.provider == "EMAIL":
             return RedirectResponse(
-                url=f"{FRONTEND_LOGIN_ERROR_URL}account_exists_use_email_login"
+                url=f"{FRONT_END_URL}account_exists_use_email_login"
             )
     else:
         user = User(
@@ -480,12 +474,12 @@ async def github_callback(
             await db.commit()
         except IntegrityError:
             await db.rollback()
-            return RedirectResponse(url=f"{FRONTEND_LOGIN_ERROR_URL}account_conflict")
+            return RedirectResponse(url=f"{FRONT_END_URL}account_conflict")
 
         await db.refresh(user)
 
     print(user)
-    redirect_response = RedirectResponse(url=FRONTEND_DASHBOARD_URL)
+    redirect_response = RedirectResponse(url=f"{FRONT_END_URL}dashboard")
     await _set_auth_cookies(redirect_response, request, user.id, db)
 
     return redirect_response

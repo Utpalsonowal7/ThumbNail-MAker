@@ -13,22 +13,16 @@ async def get_current_user(
     db: AsyncSession = Depends(get_session),
 ) -> User:
     token = request.cookies.get("access_token")
-    body = await request.body()
 
-    print("RAW BODY:", repr(body))
-    print("COOKIES:", request.cookies)
 
     if not token:
         raise HTTPException(status_code=401, detail="Not authenticated")
 
     try:
         payload = decode_access_token(token)
-        print("payload : ", payload)
     except jwt.ExpiredSignatureError as e:
-        print("JWT EXPIRED 1:", repr(e))
         raise HTTPException(status_code=401, detail="Access token expired")
     except jwt.InvalidTokenError as e:
-        print("JWT INVALID 2:", repr(e))
         raise HTTPException(
         status_code=401,
         detail=f"Invalid token",
