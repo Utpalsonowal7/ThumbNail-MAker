@@ -52,7 +52,7 @@ async def _set_auth_cookies(
     response: Response, req: Request, user_id: int, db: AsyncSession
 ):
     tokens = create_auth_tokens({"sub": str(user_id)})
-    print(tokens)
+
     session = Session(
         userId=user_id,
         refreshToken=tokens["refresh_token"],
@@ -64,12 +64,12 @@ async def _set_auth_cookies(
     db.add(session)
     try:
         await db.commit()
-       
+
     except Exception as e:
-         await db.rollback()
-      
-         raise
-    
+        await db.rollback()
+
+        raise
+
     await db.refresh(session)
 
     response.set_cookie(
@@ -84,9 +84,7 @@ async def _set_auth_cookies(
     )
 
 
-async def register_user(
-    db: AsyncSession, user_data: CreateUser,  request: Request
-):
+async def register_user(db: AsyncSession, user_data: CreateUser, request: Request):
     result = await db.execute(select(User).where(User.email == user_data.email))
     existing_user = result.scalar_one_or_none()
 
@@ -95,7 +93,12 @@ async def register_user(
 
     hash_pass = password_hash.hash(user_data.password) if user_data.password else None
 
-    new_user = User(name=user_data.name, email=user_data.email, password=hash_pass,  isEmailVerified=True)
+    new_user = User(
+        name=user_data.name,
+        email=user_data.email,
+        password=hash_pass,
+        isEmailVerified=True,
+    )
 
     db.add(new_user)
 
@@ -109,11 +112,11 @@ async def register_user(
 
     await db.refresh(new_user)
     response = JSONResponse(
-    content=success_response(
-        message="Registration successful. Please verify your email.",
-        data={"id": new_user.id, "name": new_user.name, "email": new_user.email},
+        content=success_response(
+            message="Registration successful. Please verify your email.",
+            data={"id": new_user.id, "name": new_user.name, "email": new_user.email},
+        )
     )
-)
 
     await _set_auth_cookies(response, request, new_user.id, db)
 
@@ -136,7 +139,9 @@ async def verify_user(data: VerifyOTP, db: AsyncSession):
     )
 
 
-async def login_user(data: LoginUser, db: AsyncSession, response: Response, request: Request):
+async def login_user(
+    data: LoginUser, db: AsyncSession, response: Response, request: Request
+):
     result = await db.execute(select(User).where(User.email == data.email))
     user = result.scalar_one_or_none()
 
@@ -253,7 +258,7 @@ async def google_login_redirect() -> RedirectResponse:
 
 async def google_callback(
     code: str,
-    response:Response,
+    response: Response,
     request: Request,
     db: AsyncSession,
 ) -> RedirectResponse:
@@ -355,7 +360,6 @@ async def google_callback(
         user.id,
         db,
     )
-
 
     return redirect_response
 
@@ -478,7 +482,7 @@ async def github_callback(
 
         await db.refresh(user)
 
-    print(user)
+    print(f"{FRONT_END_URL}dashboard")
     redirect_response = RedirectResponse(url=f"{FRONT_END_URL}dashboard")
     await _set_auth_cookies(redirect_response, request, user.id, db)
 
@@ -489,7 +493,9 @@ async def change_password(
     email: Email, background_task: BackgroundTasks, db: AsyncSession, req: Request
 ):
 
-    await rate_limit(email.email, 1 , 600, "sent check email of not get try after 10 min")
+    await rate_limit(
+        email.email, 1, 600, "sent check email of not get try after 10 min"
+    )
     result = await db.execute(select(User).where(User.email == email.email))
 
     user = result.scalar_one_or_none()
