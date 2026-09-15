@@ -1,4 +1,4 @@
-from fastapi import FastAPI, Request, APIRouter, HTTPException
+from fastapi import FastAPI, Request, APIRouter, HTTPException, status
 import time
 from contextlib import asynccontextmanager
 from fastapi.middleware.cors import CORSMiddleware
@@ -16,6 +16,8 @@ from app.workers.queue import init_queue, close_queue
 
 from app.routes.auth import router as auth_route
 from app.routes.thumbnail import router as thumbnail_router
+
+START_TIME = time.time()
 
 
 @asynccontextmanager
@@ -88,7 +90,12 @@ api_router.include_router(thumbnail_router)
 app.include_router(api_router)
 
 
-@app.get("/")
-def jjjsj():
-   
-    return (f"dsalajdkakdnk")
+@app.get("/", status_code=status.HTTP_200_OK)
+def health_check():
+    return JSONResponse(
+        status_code=status.HTTP_200_OK,
+        content={
+            "status": "ok",
+            "uptime_seconds": round(time.time() - START_TIME, 2),
+        },
+    )
