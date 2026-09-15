@@ -83,11 +83,13 @@ async def google_login():
 @router.get("/google/callback")
 async def google_auth_callback(
     code: str,
+    res:Response,
     request: Request,
     db: AsyncSession = Depends(get_session),
 ):
     return await google_callback(
         code,
+        res,
         request,
         db,
     )

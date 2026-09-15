@@ -257,6 +257,7 @@ async def google_login_redirect() -> RedirectResponse:
 
 async def google_callback(
     code: str,
+    response:Response,
     request: Request,
     db: AsyncSession,
 ) -> RedirectResponse:
@@ -347,6 +348,7 @@ async def google_callback(
 
         await db.refresh(user)
 
+    print("redirecting.......................")
     redirect_response = RedirectResponse(
         url=f"{FRONT_END_URl}dashboard",
         status_code=302,
@@ -358,6 +360,8 @@ async def google_callback(
         user.id,
         db,
     )
+
+    response.set_cookie(key="fakesession", value="fake-cookie-session-value")
 
     return redirect_response
 
